@@ -1,0 +1,38 @@
+# Configuration for AnbimaETTJ Replication
+
+# Data fetching settings
+data_source:
+  # Anbima provides yield curve data for Brazilian government bonds
+  # The data includes both nominal (LTN/NTN-F) and inflation-linked (NTN-B) bonds
+  base_url: "https://www.anbima.com.br"
+  
+# Yield curve model parameters
+model:
+  # Nelson-Siegel-Svensson model parameters
+  type: "nelson_siegel_svensson"
+  # Initial parameter guesses for optimization
+  initial_params:
+    beta0: 0.08
+    beta1: -0.02
+    beta2: 0.01
+    beta3: 0.01
+    tau1: 1.0
+    tau2: 5.0
+  # Tenors to calculate (in years)
+  tenors: [0.25, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30]
+
+# Output settings
+output:
+  directory: "output"
+  # Output file names
+  files:
+    nominal_yields: "nominal_yields.csv"
+    inflation_linked_yields: "inflation_linked_yields.csv"
+    breakeven_inflation: "breakeven_inflation.csv"
+    forward_rates: "forward_rates.csv"
+
+# Scheduling (for GitHub Actions)
+schedule:
+  # Run daily at 9:00 PM BRT (after market close)
+  cron: "0 21 * * *"
+  timezone: "America/Sao_Paulo"
