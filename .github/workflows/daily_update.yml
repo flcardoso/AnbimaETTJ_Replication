@@ -12,6 +12,9 @@ jobs:
   update-yield-curves:
     runs-on: ubuntu-latest
     
+    permissions:
+      contents: write  # Allow pushing results back to repository
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
