@@ -32,7 +32,9 @@ output:
     forward_rates: "forward_rates.csv"
 
 # Scheduling (for GitHub Actions)
-schedule:
-  # Run daily at 9:00 PM BRT (after market close)
-  cron: "0 21 * * *"
-  timezone: "America/Sao_Paulo"
+on:
+  workflow_dispatch:
+# schedule:
+#   # Run daily at 9:00 PM BRT (after market close)
+#   cron: "0 21 * * *"
+#   timezone: "America/Sao_Paulo"
