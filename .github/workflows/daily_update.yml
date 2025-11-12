@@ -8,6 +8,9 @@ on:
   # Allow manual trigger
   workflow_dispatch:
 
+permissions:
+  contents: write  # Allow pushing results back to repository
+
 jobs:
   update-yield-curves:
     runs-on: ubuntu-latest
@@ -18,11 +21,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for accurate git operations
+          persist-credentials: true
       
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       
       - name: Install dependencies
         run: |
@@ -31,14 +37,13 @@ jobs:
           pip install pyyaml
       
       - name: Run yield curve pipeline
-        run: |
-          cd src
-          python pipeline.py
+        run: python src/pipeline.py
       
       - name: Commit and push results
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+          git add -A
           git add output/*.csv
           git diff --staged --quiet || git commit -m "Update yield curves - $(date +'%Y-%m-%d')"
           git push
