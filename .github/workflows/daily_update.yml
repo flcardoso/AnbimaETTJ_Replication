@@ -2,8 +2,8 @@ name: Daily Yield Curve Update
 
 on:
   # Run daily at 9:00 PM BRT (00:00 UTC next day, accounting for BRT = UTC-3)
-  schedule:
-    - cron: '0 0 * * *'
+  # schedule:
+  #   - cron: '0 0 * * *'
   
   # Allow manual trigger
   workflow_dispatch:
