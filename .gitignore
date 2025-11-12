@@ -32,8 +32,9 @@ ENV/
 *.swo
 
 # Output data
-output/
-*.csv
+# keep everything in output tracked
+!output/
+!output/*.csv
 
 # OS
 .DS_Store
