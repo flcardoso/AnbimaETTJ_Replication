@@ -19,7 +19,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 class YieldCurvePipeline:
     """Main pipeline for yield curve processing."""
     

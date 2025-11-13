@@ -10,6 +10,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
+from pathlib import Path
+import os
+from urllib.request import urlopen
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +33,34 @@ class BondDataFetcher:
         self.logger = logger
         self.cache_path = cache_path
         self._raw_df = None
+
+    def download_tesouro_csv(self,dest_path: str | Path = "data/precotaxatesourodireto.csv") -> Path:
+        """
+        Download the Tesouro Direto historical prices/rates CSV and save it locally.
+
+        Parameters
+        ----------
+        dest_path : str or Path
+            Where to save the file (relative to repo root). Folder is created if needed.
+
+        Returns
+        -------
+        Path
+            The full path to the downloaded file.
+        """
+        dest_path = Path(dest_path)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        print(f"Downloading Tesouro Direto CSV to {dest_path} ...")
+        with urlopen(self.TD_URL) as resp, open(dest_path, "wb") as f:
+            # stream bytes exactly as served (semicolon-separated, comma decimals)
+            chunk = resp.read(8192)
+            while chunk:
+                f.write(chunk)
+                chunk = resp.read(8192)
+
+        print("Download completed.")
+        return dest_path
 
     def _load_td_raw(self):
         """Download (or load cached) Tesouro Direto CSV into a DataFrame."""

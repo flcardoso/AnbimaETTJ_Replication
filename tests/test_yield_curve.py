@@ -6,6 +6,7 @@ import unittest
 import numpy as np
 import sys
 import os
+from data_fetcher import BondDataFetcher
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -16,6 +17,8 @@ from yield_curve_model import NelsonSiegelSvensson
 class TestNelsonSiegelSvensson(unittest.TestCase):
     """Test cases for NSS model."""
     
+    
+
     def setUp(self):
         """Set up test fixtures."""
         self.model = NelsonSiegelSvensson()
