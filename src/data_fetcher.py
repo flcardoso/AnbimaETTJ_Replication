@@ -18,10 +18,34 @@ logger = logging.getLogger(__name__)
 
 class BondDataFetcher:
     """Fetches Brazilian government bond data."""
-    
-    def __init__(self):
+    TD_URL = (
+        "https://www.tesourotransparente.gov.br/ckan/"
+        "dataset/df56aa42-484a-4a59-8184-7676580c81e3/"
+        "resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/"
+        "download/precotaxatesourodireto.csv"
+    )  # precotaxatesourodireto.csv
+
+    def __init__(self, cache_path: str | None = "data/precotaxatesourodireto.csv"):
         """Initialize the bond data fetcher."""
         self.logger = logger
+        self.cache_path = cache_path
+        self._raw_df = None
+
+    def _load_td_raw(self):
+        """Download (or load cached) Tesouro Direto CSV into a DataFrame."""
+        if self._raw_df is not None:
+            return self._raw_df
+
+        if self.cache_path and os.path.exists(self.cache_path):
+            df = pd.read_csv(self.cache_path, sep=";", decimal=",", encoding="latin1")
+        else:
+            df = pd.read_csv(self.TD_URL, sep=";", decimal=",", encoding="latin1")
+            if self.cache_path:
+                os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+                df.to_csv(self.cache_path, sep=";", index=False)
+
+        self._raw_df = df
+        return df
         
     def fetch_market_data(self, date: datetime = None) -> Dict[str, pd.DataFrame]:
         """
