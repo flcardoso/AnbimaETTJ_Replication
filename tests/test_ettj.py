@@ -6,7 +6,7 @@ import unittest
 import sys
 import os
 from datetime import date
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -143,6 +143,82 @@ class TestAnbimaETTJFetcher(unittest.TestCase):
         self.assertEqual(result[0]['nominal'], 11.5)
         self.assertIsNone(result[0]['real'])
         self.assertIsNone(result[0]['breakeven'])
+    
+    @patch('data_fetcher.urlopen')
+    @patch('data_fetcher.Request')
+    def test_authentication_headers_added(self, mock_request_class, mock_urlopen):
+        """Test that authentication headers are added when env vars are set."""
+        # Set environment variables
+        os.environ['ANBIMA_API_KEY'] = 'test-api-key-123'
+        os.environ['ANBIMA_CLIENT_ID'] = 'test-client-id-456'
+        
+        try:
+            # Mock the request object
+            mock_request = MagicMock()
+            mock_request_class.return_value = mock_request
+            
+            # Mock the response
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.read.return_value = b'{"curvas": []}'
+            mock_response.__enter__ = MagicMock(return_value=mock_response)
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+            
+            # Call the API function
+            fetch_anbima_ettj_api("2024-11-14")
+            
+            # Verify headers were added
+            header_calls = [call[0] for call in mock_request.add_header.call_args_list]
+            
+            # Check for User-Agent header
+            self.assertIn(('User-Agent', 'Python-urllib/AnbimaETTJ-Replication'), header_calls)
+            
+            # Check for authentication headers
+            self.assertIn(('X-API-Key', 'test-api-key-123'), header_calls)
+            self.assertIn(('client_id', 'test-client-id-456'), header_calls)
+            
+        finally:
+            # Clean up environment variables
+            if 'ANBIMA_API_KEY' in os.environ:
+                del os.environ['ANBIMA_API_KEY']
+            if 'ANBIMA_CLIENT_ID' in os.environ:
+                del os.environ['ANBIMA_CLIENT_ID']
+    
+    @patch('data_fetcher.urlopen')
+    @patch('data_fetcher.Request')
+    def test_no_authentication_headers_without_env_vars(self, mock_request_class, mock_urlopen):
+        """Test that authentication headers are NOT added when env vars are not set."""
+        # Ensure environment variables are not set
+        if 'ANBIMA_API_KEY' in os.environ:
+            del os.environ['ANBIMA_API_KEY']
+        if 'ANBIMA_CLIENT_ID' in os.environ:
+            del os.environ['ANBIMA_CLIENT_ID']
+        
+        # Mock the request object
+        mock_request = MagicMock()
+        mock_request_class.return_value = mock_request
+        
+        # Mock the response
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.read.return_value = b'{"curvas": []}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+        
+        # Call the API function
+        fetch_anbima_ettj_api("2024-11-14")
+        
+        # Verify headers were added
+        header_calls = [call[0] for call in mock_request.add_header.call_args_list]
+        
+        # Check for User-Agent header (should be present)
+        self.assertIn(('User-Agent', 'Python-urllib/AnbimaETTJ-Replication'), header_calls)
+        
+        # Check that authentication headers were NOT added
+        auth_headers = [h for h in header_calls if h[0] in ('X-API-Key', 'client_id')]
+        self.assertEqual(len(auth_headers), 0)
 
 
 class TestPipeline(unittest.TestCase):
