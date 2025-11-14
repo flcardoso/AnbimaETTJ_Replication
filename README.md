@@ -1,23 +1,24 @@
 # AnbimaETTJ_Replication
 
-Automated daily replication of Brazilian government bond yield curves (ETTJ - Estrutura a Termo de Taxa de Juros).
+Automated weekly fetching of ANBIMA's official ETTJ (Estrutura a Termo de Taxa de Juros) zero-coupon curves for Brazilian government bonds.
 
 ## Overview
 
-This repository fetches publicly available Brazilian government bond data and fits a Nelson-Siegel-Svensson (NSS) yield curve model to extract parameters. The system runs automatically at a specified time and generates CSV files containing:
+This repository fetches ANBIMA's official ETTJ zero-coupon curves from their public API and stores them in cumulative CSV files. The system runs automatically weekly on Mondays at 8:00 AM BRT, fetching data for the previous week (Monday-Friday) and storing only valid dates (skipping weekends and Brazilian holidays automatically).
 
-- **Nominal yields** - Yields from nominal government bonds (LTN/NTN-F)
-- **Inflation-linked yields** - Real yields from inflation-indexed bonds (NTN-B)
-- **Breakeven inflation rates** - Implied inflation expectations
-- **Forward rates** - Expected future interest rates for both nominal and real curves
+The three curves retrieved are:
+- **Nominal (Pre-fixado)** - Nominal interest rate curve
+- **Real (IPCA)** - Real interest rate curve (inflation-indexed)
+- **Breakeven (Implicit)** - Implied inflation expectations (difference between nominal and real)
 
 ## Features
 
-- 🤖 **Automated daily execution** via GitHub Actions
-- 📊 **Nelson-Siegel-Svensson model** for robust yield curve fitting
-- 📈 **Multiple yield curve outputs** (nominal, real, breakeven, forwards)
-- 💾 **CSV exports** with historical data accumulation
-- 🔧 **Configurable** tenors and model parameters
+- 🤖 **Automated weekly execution** via GitHub Actions (Mondays at 8:00 AM BRT)
+- 📊 **Official ANBIMA ETTJ curves** - Zero-coupon curves from the authoritative source
+- 📈 **Three curve types** - Nominal, Real (IPCA), and Breakeven inflation
+- 💾 **Cumulative CSV storage** - Historical data accumulation with automatic deduplication
+- 🗓️ **Smart date handling** - Only stores valid dates with actual data (no weekends/holidays)
+- 🧪 **Testing script** - View downloaded data structure and content
 
 ## Installation
 
@@ -41,64 +42,63 @@ cd src
 python pipeline.py
 ```
 
+This will fetch data for the previous week (Monday-Friday) and update the CSV files.
+
+### Testing the API
+
+To test the ANBIMA API and view what data is being downloaded:
+
+```bash
+python test_anbima_api.py
+```
+
+This script will:
+- Test direct API calls for recent dates
+- Display the raw JSON response from ANBIMA
+- Show parsed data structure
+- Test week data fetching
+
 ### Automated Execution
 
-The pipeline runs automatically daily at 9:00 PM BRT (configured in `.github/workflows/daily_update.yml`). 
+The pipeline runs automatically weekly on **Mondays at 8:00 AM BRT** (configured in `.github/workflows/daily_update.yml`). 
 
 To modify the schedule, edit the cron expression in the workflow file:
 
 ```yaml
 schedule:
-  - cron: '0 0 * * *'  # Adjust as needed
+  - cron: '0 11 * * 1'  # Mondays at 11:00 UTC (8:00 BRT)
 ```
 
 ### Configuration
 
 Edit `config.yaml` to customize:
 
-- Model parameters (initial guesses, bounds)
-- Output tenors (e.g., 1Y, 5Y, 10Y)
+- API endpoint URL
 - Output directory and file names
 - Scheduling parameters
 
 ## Output Files
 
-All outputs are saved in the `output/` directory:
+All outputs are saved in the `output/` directory as expanding CSV files:
 
-1. **nominal_yields.csv** - Nominal yield curves
-   - Columns: date, tenor_years, yield
+1. **ettj_nominal.csv** - Nominal (pre-fixado) zero-coupon curve
+   - Columns: date, du (business days), rate
+   
+2. **ettj_real.csv** - Real (IPCA-linked) zero-coupon curve
+   - Columns: date, du (business days), rate
+   
+3. **ettj_breakeven.csv** - Breakeven (implicit) inflation curve
+   - Columns: date, du (business days), rate
 
-2. **inflation_linked_yields.csv** - Real yield curves  
-   - Columns: date, tenor_years, yield
+Each file is cumulative, with new data appended automatically and duplicates removed.
 
-3. **breakeven_inflation.csv** - Implied inflation expectations
-   - Columns: date, tenor_years, breakeven_inflation
+## Data Source
 
-4. **forward_rates.csv** - Forward rates (3-month horizon)
-   - Columns: date, tenor_years, nominal_forward, inflation_forward
-
-## Methodology
-
-### Nelson-Siegel-Svensson Model
-
-The NSS model fits the yield curve with 6 parameters:
-
-```
-y(t) = β₀ + β₁[(1-e^(-t/τ₁))/(t/τ₁)] + β₂[((1-e^(-t/τ₁))/(t/τ₁)) - e^(-t/τ₁)] + β₃[((1-e^(-t/τ₂))/(t/τ₂)) - e^(-t/τ₂)]
-```
-
-Where:
-- **β₀** - Long-term level
-- **β₁** - Short-term component  
-- **β₂, β₃** - Medium-term components
-- **τ₁, τ₂** - Decay factors
-
-### Data Sources
-
-The current implementation uses sample data structure. For production use, integrate with:
-- Anbima API (requires subscription)
-- B3 (Brazilian stock exchange) market data
-- Other financial data providers
+The data comes from ANBIMA's public API:
+- **API Endpoint**: `https://api.anbima.com.br/feed/precos-indices/v1/titulos-publicos/curvas-juros`
+- **Data**: Official ETTJ zero-coupon curves published by ANBIMA
+- **Update Frequency**: Daily (on business days)
+- **Curve Types**: Nominal, IPCA-linked, and implicit (breakeven)
 
 ## Project Structure
 
@@ -109,10 +109,13 @@ AnbimaETTJ_Replication/
 │       └── daily_update.yml    # GitHub Actions workflow
 ├── src/
 │   ├── __init__.py
-│   ├── data_fetcher.py         # Bond data fetching
-│   ├── yield_curve_model.py    # NSS model implementation
+│   ├── data_fetcher.py         # ANBIMA API data fetching
 │   └── pipeline.py             # Main pipeline orchestration
-├── output/                     # Generated CSV files
+├── output/                     # Generated CSV files (cumulative)
+│   ├── ettj_nominal.csv
+│   ├── ettj_real.csv
+│   └── ettj_breakeven.csv
+├── test_anbima_api.py          # Testing script to view API data
 ├── config.yaml                 # Configuration file
 ├── requirements.txt            # Python dependencies
 └── README.md
@@ -122,10 +125,25 @@ AnbimaETTJ_Replication/
 
 - pandas >= 2.0.0
 - numpy >= 1.24.0
-- scipy >= 1.10.0 (for optimization)
+- scipy >= 1.10.0
 - requests >= 2.31.0
 - python-dateutil >= 2.8.2
-- pyyaml
+- pyyaml >= 6.0
+
+## How It Works
+
+1. **Weekly Trigger**: GitHub Actions runs every Monday at 8:00 AM BRT
+2. **Date Calculation**: Pipeline calculates the previous week's date range (Monday-Friday)
+3. **Data Fetching**: For each weekday in the range:
+   - Attempts to fetch ETTJ data from ANBIMA API
+   - Skips weekends automatically
+   - Skips dates with no data (e.g., Brazilian holidays)
+4. **Data Storage**: Valid data is:
+   - Parsed into structured format (date, du, rate)
+   - Split into three files (nominal, real, breakeven)
+   - Appended to existing CSV files
+   - Deduplicated (same date + du combination)
+   - Sorted by date and du
 
 ## Contributing
 
@@ -137,6 +155,5 @@ See LICENSE file for details.
 
 ## References
 
-- [Anbima ETTJ Documentation](https://www.anbima.com.br)
-- Nelson, C. R., & Siegel, A. F. (1987). Parsimonious Modeling of Yield Curves
-- Svensson, L. E. (1994). Estimating and Interpreting Forward Interest Rates
+- [ANBIMA - Associação Brasileira das Entidades dos Mercados Financeiro e de Capitais](https://www.anbima.com.br)
+- [ANBIMA ETTJ Documentation](https://www.anbima.com.br/pt_br/informar/curvas-de-juros.htm)
