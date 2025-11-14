@@ -37,6 +37,9 @@ jobs:
       
       - name: Run ETTJ pipeline
         run: python src/pipeline.py
+        env:
+          ANBIMA_API_KEY: ${{ secrets.ANBIMA_API_KEY }}
+          ANBIMA_CLIENT_ID: ${{ secrets.ANBIMA_CLIENT_ID }}
       
       - name: Commit and push results
         run: |

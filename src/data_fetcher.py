@@ -12,6 +12,7 @@ from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 import json
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,9 +52,21 @@ def fetch_anbima_ettj_api(ref_date: Optional[str] = None) -> Optional[dict]:
         
         logger.info(f"Fetching ETTJ data from ANBIMA API: {url}")
         
-        # Create request (no authentication headers for now as per requirements)
+        # Create request with authentication headers
         request = Request(url)
         request.add_header('User-Agent', 'Python-urllib/AnbimaETTJ-Replication')
+        
+        # Add authentication headers if credentials are available
+        api_key = os.environ.get('ANBIMA_API_KEY')
+        client_id = os.environ.get('ANBIMA_CLIENT_ID')
+        
+        if api_key:
+            request.add_header('X-API-Key', api_key)
+            logger.debug("Added API key to request headers")
+        
+        if client_id:
+            request.add_header('client_id', client_id)
+            logger.debug("Added client ID to request headers")
         
         # Perform HTTP GET request
         with urlopen(request, timeout=30) as response:
