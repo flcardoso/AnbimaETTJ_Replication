@@ -18,8 +18,80 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ANBIMA ETTJ API endpoint
+ANBIMA_AUTH_URL = "https://api.anbima.com.br/oauth/access-token"
 ANBIMA_ETTJ_URL = "https://api.anbima.com.br/feed/precos-indices/v1/titulos-publicos/curvas-juros"
 
+# Global token cache
+_access_token = None
+_token_expiry = None
+
+def get_access_token() -> Optional[str]:
+    """
+    Get OAuth 2.0 access token from ANBIMA API.
+    
+    Uses client_id and client_secret from environment variables.
+    Caches the token until it expires.
+    
+    Returns
+    -------
+    str or None
+        Access token if successful, None otherwise.
+    """
+    global _access_token, _token_expiry
+    
+    # Check if we have a valid cached token
+    if _access_token and _token_expiry:
+        if datetime.now() < _token_expiry:
+            logger.debug("Using cached access token")
+            return _access_token
+    
+    # Get credentials from environment
+    client_id = os.environ.get('ANBIMA_CLIENT_ID')
+    client_secret = os.environ.get('ANBIMA_CLIENT_SECRET')  # Note: SECRET, not API_KEY
+    
+    if not client_id or not client_secret:
+        logger.error("ANBIMA_CLIENT_ID and ANBIMA_CLIENT_SECRET must be set in environment")
+        return None
+    
+    try:
+        # Prepare OAuth request body
+        data = {
+            'grant_type': 'client_credentials'
+        }
+        
+        # Encode as JSON
+        json_data = json.dumps(data).encode('utf-8')
+        
+        # Create request
+        request = Request(ANBIMA_AUTH_URL, data=json_data, method='POST')
+        request.add_header('Content-Type', 'application/json')
+        request.add_header('client_id', client_id)
+        request.add_header('access_key', client_secret)
+        
+        logger.info("Requesting new access token from ANBIMA")
+        
+        # Make request
+        with urlopen(request, timeout=30) as response:
+            if response.status == 200:
+                token_data = json.loads(response.read().decode('utf-8'))
+                _access_token = token_data.get('access_token')
+                
+                # Calculate expiry (typically 3600 seconds, subtract buffer)
+                expires_in = token_data.get('expires_in', 3600)
+                _token_expiry = datetime.now() + timedelta(seconds=expires_in - 60)
+                
+                logger.info("Successfully obtained access token")
+                return _access_token
+            else:
+                logger.error(f"Failed to get access token: HTTP {response.status}")
+                return None
+                
+    except HTTPError as e:
+        logger.error(f"HTTP error getting access token: {e.code} - {e.reason}")
+        return None
+    except Exception as e:
+        logger.error(f"Error getting access token: {e}")
+        return None
 
 def fetch_anbima_ettj_api(ref_date: Optional[str] = None) -> Optional[dict]:
     """
@@ -45,6 +117,12 @@ def fetch_anbima_ettj_api(ref_date: Optional[str] = None) -> Optional[dict]:
         Network-related errors are logged and re-raised.
     """
     try:
+        # Get access token first
+        access_token = get_access_token()
+        if not access_token:
+            logger.error("Cannot fetch ETTJ data: failed to obtain access token")
+            return None
+        
         # Build URL with optional date parameter
         url = ANBIMA_ETTJ_URL
         if ref_date:
@@ -55,18 +133,7 @@ def fetch_anbima_ettj_api(ref_date: Optional[str] = None) -> Optional[dict]:
         # Create request with authentication headers
         request = Request(url)
         request.add_header('User-Agent', 'Python-urllib/AnbimaETTJ-Replication')
-        
-        # Add authentication headers if credentials are available
-        api_key = os.environ.get('ANBIMA_API_KEY')
-        client_id = os.environ.get('ANBIMA_CLIENT_ID')
-        
-        if api_key:
-            request.add_header('X-API-Key', api_key)
-            logger.debug("Added API key to request headers")
-        
-        if client_id:
-            request.add_header('client_id', client_id)
-            logger.debug("Added client ID to request headers")
+        request.add_header('Authorization', f'Bearer {access_token}')
         
         # Perform HTTP GET request
         with urlopen(request, timeout=30) as response:
