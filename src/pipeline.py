@@ -1,17 +1,17 @@
 """
-Main pipeline for processing bond data and generating yield curves.
+Main pipeline for fetching ANBIMA ETTJ zero-coupon curves and storing them as CSV.
+
+This pipeline:
+1. Fetches ANBIMA's official ETTJ curves (nominal, IPCA, breakeven) for the previous week
+2. Stores data in expanding CSV files (only for valid dates with actual data)
 """
 
 import os
-import yaml
 import pandas as pd
-import numpy as np
-from datetime import datetime
-from typing import Dict, List
+from datetime import date, timedelta
 import logging
 
-from data_fetcher import BondDataFetcher
-from yield_curve_model import NelsonSiegelSvensson
+from data_fetcher import AnbimaETTJFetcher
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,233 +19,144 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class YieldCurvePipeline:
-    """Main pipeline for yield curve processing."""
+
+class ETTJPipeline:
+    """Main pipeline for ANBIMA ETTJ data fetching and storage."""
     
-    def __init__(self, config_path: str = None):
+    def __init__(self, output_dir: str = "output"):
         """
         Initialize the pipeline.
         
         Args:
-            config_path: Path to configuration file
+            output_dir: Directory to save CSV files (default: 'output')
         """
-        if config_path is None:
-            # Default to config.yaml in the repository root
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            config_path = os.path.join(os.path.dirname(script_dir), 'config.yaml')
-        
-        self.config = self._load_config(config_path)
-        self.fetcher = BondDataFetcher()
+        self.output_dir = output_dir
+        self.fetcher = AnbimaETTJFetcher()
         self.logger = logger
         
-    def _load_config(self, config_path: str) -> Dict:
-        """Load configuration from YAML file."""
-        with open(config_path, 'r') as f:
-            return yaml.safe_load(f)
-    
-    def run(self, date: datetime = None) -> Dict[str, pd.DataFrame]:
+        # Make output_dir absolute relative to repository root
+        if not os.path.isabs(self.output_dir):
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            self.output_dir = os.path.join(os.path.dirname(script_dir), self.output_dir)
+        
+        # Ensure output directory exists
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+    def get_previous_week_dates(self) -> tuple[date, date]:
         """
-        Run the full pipeline for a given date.
+        Calculate the date range for the previous week (Monday-Friday).
+        
+        Returns:
+            Tuple of (start_date, end_date) for the previous week
+        """
+        today = date.today()
+        
+        # Find the most recent Monday
+        days_since_monday = today.weekday()  # Monday = 0, Sunday = 6
+        if days_since_monday == 0:
+            # If today is Monday, go back to last Monday
+            last_monday = today - timedelta(days=7)
+        else:
+            # Go back to the most recent Monday
+            last_monday = today - timedelta(days=days_since_monday)
+        
+        # Previous week is the week before last Monday
+        previous_week_start = last_monday - timedelta(days=7)
+        previous_week_end = previous_week_start + timedelta(days=4)  # Friday
+        
+        return previous_week_start, previous_week_end
+    
+    def run(self, start_date: date = None, end_date: date = None):
+        """
+        Run the pipeline to fetch and store ETTJ data.
         
         Args:
-            date: Date to process (defaults to today)
-            
-        Returns:
-            Dictionary of output DataFrames
+            start_date: Start date for data fetching (defaults to previous week Monday)
+            end_date: End date for data fetching (defaults to previous week Friday)
         """
-        if date is None:
-            date = datetime.now()
+        # Use previous week dates if not specified
+        if start_date is None or end_date is None:
+            start_date, end_date = self.get_previous_week_dates()
         
-        self.logger.info(f"Running pipeline for {date.strftime('%Y-%m-%d')}")
+        self.logger.info(f"Running ETTJ pipeline for {start_date} to {end_date}")
         
-        # Step 1: Fetch bond data
-        bond_data = self.fetcher.fetch_market_data(date)
+        # Fetch data for the date range
+        data = self.fetcher.fetch_week_data(start_date, end_date)
         
-        # Step 2: Fit yield curves
-        nominal_curve = self._fit_nominal_curve(bond_data['nominal'], date)
-        inflation_curve = self._fit_inflation_curve(bond_data['inflation_linked'], date)
+        if not data:
+            self.logger.warning("No data fetched from ANBIMA API")
+            return
         
-        # Step 3: Generate outputs
-        tenors = self.config['model']['tenors']
+        self.logger.info(f"Fetched {len(data)} data points")
         
-        nominal_yields_df = self._generate_yields(nominal_curve, tenors, date, 'nominal')
-        inflation_yields_df = self._generate_yields(inflation_curve, tenors, date, 'inflation_linked')
-        breakeven_df = self._calculate_breakeven(nominal_yields_df, inflation_yields_df, date)
-        forward_rates_df = self._calculate_forward_rates(nominal_curve, inflation_curve, tenors, date)
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
         
-        # Step 4: Save outputs
-        output_dir = self.config['output']['directory']
-        os.makedirs(output_dir, exist_ok=True)
+        # Save to CSV
+        self._save_to_csv(df)
         
-        outputs = {
-            'nominal_yields': nominal_yields_df,
-            'inflation_linked_yields': inflation_yields_df,
-            'breakeven_inflation': breakeven_df,
-            'forward_rates': forward_rates_df
+        self.logger.info("Pipeline completed successfully")
+    
+    def _save_to_csv(self, new_data: pd.DataFrame):
+        """
+        Save ETTJ data to expanding CSV files.
+        
+        Creates/updates three CSV files:
+        - ettj_nominal.csv: Nominal (pre-fixado) rates
+        - ettj_real.csv: Real (IPCA-linked) rates
+        - ettj_breakeven.csv: Breakeven (implicit) inflation rates
+        
+        Args:
+            new_data: DataFrame with columns: date, du, nominal, real, breakeven
+        """
+        # Define the three output files
+        files = {
+            'nominal': 'ettj_nominal.csv',
+            'real': 'ettj_real.csv',
+            'breakeven': 'ettj_breakeven.csv'
         }
         
-        self._save_outputs(outputs, output_dir)
-        
-        return outputs
-    
-    def _fit_nominal_curve(self, bond_data: pd.DataFrame, date: datetime) -> NelsonSiegelSvensson:
-        """Fit yield curve to nominal bond data."""
-        self.logger.info("Fitting nominal yield curve")
-        
-        # Calculate time to maturity in years
-        maturities = (bond_data['maturity_date'] - date).dt.days / 365.25
-        yields = bond_data['yield'].values
-        
-        model = NelsonSiegelSvensson()
-        model.fit(maturities.values, yields)
-        
-        return model
-    
-    def _fit_inflation_curve(self, bond_data: pd.DataFrame, date: datetime) -> NelsonSiegelSvensson:
-        """Fit yield curve to inflation-linked bond data."""
-        self.logger.info("Fitting inflation-linked yield curve")
-        
-        # Calculate time to maturity in years
-        maturities = (bond_data['maturity_date'] - date).dt.days / 365.25
-        yields = bond_data['real_yield'].values
-        
-        model = NelsonSiegelSvensson()
-        model.fit(maturities.values, yields)
-        
-        return model
-    
-    def _generate_yields(self, model: NelsonSiegelSvensson, tenors: List[float], 
-                        date: datetime, curve_type: str) -> pd.DataFrame:
-        """
-        Generate yield curve for specified tenors.
-        
-        Args:
-            model: Fitted NSS model
-            tenors: List of tenors in years
-            date: Reference date
-            curve_type: Type of curve ('nominal' or 'inflation_linked')
+        for rate_type, filename in files.items():
+            filepath = os.path.join(self.output_dir, filename)
             
-        Returns:
-            DataFrame with yields for each tenor
-        """
-        tenors_array = np.array(tenors)
-        yields = model.predict(tenors_array)
-        
-        df = pd.DataFrame({
-            'date': date.strftime('%Y-%m-%d'),
-            'tenor_years': tenors,
-            'yield': yields
-        })
-        
-        return df
-    
-    def _calculate_breakeven(self, nominal_df: pd.DataFrame, 
-                            inflation_df: pd.DataFrame, date: datetime) -> pd.DataFrame:
-        """
-        Calculate breakeven inflation rates.
-        
-        Breakeven inflation = Nominal yield - Real yield
-        
-        Args:
-            nominal_df: Nominal yields DataFrame
-            inflation_df: Inflation-linked yields DataFrame
-            date: Reference date
+            # Filter data for this rate type (only rows where this rate is not None)
+            rate_data = new_data[new_data[rate_type].notna()].copy()
             
-        Returns:
-            DataFrame with breakeven inflation rates
-        """
-        self.logger.info("Calculating breakeven inflation rates")
-        
-        # Merge on tenor
-        merged = nominal_df.merge(
-            inflation_df, 
-            on='tenor_years', 
-            suffixes=('_nominal', '_inflation')
-        )
-        
-        df = pd.DataFrame({
-            'date': date.strftime('%Y-%m-%d'),
-            'tenor_years': merged['tenor_years'],
-            'breakeven_inflation': merged['yield_nominal'] - merged['yield_inflation']
-        })
-        
-        return df
-    
-    def _calculate_forward_rates(self, nominal_model: NelsonSiegelSvensson,
-                                 inflation_model: NelsonSiegelSvensson,
-                                 tenors: List[float], date: datetime) -> pd.DataFrame:
-        """
-        Calculate forward rates for both nominal and inflation-linked curves.
-        
-        Args:
-            nominal_model: Fitted nominal NSS model
-            inflation_model: Fitted inflation-linked NSS model
-            tenors: List of tenors in years
-            date: Reference date
+            if rate_data.empty:
+                self.logger.info(f"No {rate_type} data to save")
+                continue
             
-        Returns:
-            DataFrame with forward rates
-        """
-        self.logger.info("Calculating forward rates")
-        
-        forward_data = []
-        
-        for tenor in tenors:
-            if tenor >= 0.25:  # Need at least 3 months
-                nominal_forward = nominal_model.forward_rate(tenor, horizon=0.25)
-                inflation_forward = inflation_model.forward_rate(tenor, horizon=0.25)
-                
-                forward_data.append({
-                    'date': date.strftime('%Y-%m-%d'),
-                    'tenor_years': tenor,
-                    'nominal_forward': nominal_forward,
-                    'inflation_forward': inflation_forward
-                })
-        
-        return pd.DataFrame(forward_data)
-    
-    def _save_outputs(self, outputs: Dict[str, pd.DataFrame], output_dir: str):
-        """Save output DataFrames to CSV files."""
-        # Make output_dir absolute relative to repository root
-        if not os.path.isabs(output_dir):
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            output_dir = os.path.join(os.path.dirname(script_dir), output_dir)
-        
-        self.logger.info(f"Saving outputs to {output_dir}")
-        
-        os.makedirs(output_dir, exist_ok=True)
-        
-        file_mapping = self.config['output']['files']
-        
-        for key, df in outputs.items():
-            filename = file_mapping[key]
-            filepath = os.path.join(output_dir, filename)
+            # Prepare data for saving
+            output_df = rate_data[['date', 'du', rate_type]].copy()
+            output_df.columns = ['date', 'du', 'rate']
+            
+            # Convert date to string for CSV storage
+            output_df['date'] = output_df['date'].astype(str)
             
             # Append to existing file or create new one
             if os.path.exists(filepath):
                 existing_df = pd.read_csv(filepath)
-                combined_df = pd.concat([existing_df, df], ignore_index=True)
-                # Remove duplicates based on date and tenor
-                if 'tenor_years' in combined_df.columns:
-                    combined_df = combined_df.drop_duplicates(subset=['date', 'tenor_years'], keep='last')
-                else:
-                    combined_df = combined_df.drop_duplicates(subset=['date'], keep='last')
+                combined_df = pd.concat([existing_df, output_df], ignore_index=True)
+                # Remove duplicates (same date and du)
+                combined_df = combined_df.drop_duplicates(subset=['date', 'du'], keep='last')
+                # Sort by date and du
+                combined_df = combined_df.sort_values(['date', 'du']).reset_index(drop=True)
                 combined_df.to_csv(filepath, index=False)
+                self.logger.info(f"Updated {filename} with {len(output_df)} new records")
             else:
-                df.to_csv(filepath, index=False)
-            
-            self.logger.info(f"Saved {key} to {filename}")
+                output_df = output_df.sort_values(['date', 'du']).reset_index(drop=True)
+                output_df.to_csv(filepath, index=False)
+                self.logger.info(f"Created {filename} with {len(output_df)} records")
 
 
 def main():
     """Main entry point."""
-    logger.info("Starting Anbima ETTJ Replication pipeline")
+    logger.info("Starting ANBIMA ETTJ pipeline")
     
-    pipeline = YieldCurvePipeline()
-    results = pipeline.run()
+    pipeline = ETTJPipeline()
+    pipeline.run()
     
-    logger.info("Pipeline completed successfully")
-    logger.info(f"Generated outputs: {list(results.keys())}")
+    logger.info("Pipeline finished")
 
 
 if __name__ == '__main__':

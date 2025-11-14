@@ -1,9 +1,9 @@
-name: Daily Yield Curve Update
+name: Weekly ANBIMA ETTJ Update
 
 on:
-  # Run daily at 9:00 PM BRT (00:00 UTC next day, accounting for BRT = UTC-3)
-  # schedule:
-  #   - cron: '0 0 * * *'
+  # Run weekly on Mondays at 8:00 AM BRT (11:00 UTC, accounting for BRT = UTC-3)
+  schedule:
+    - cron: '0 11 * * 1'
   
   # Allow manual trigger
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   contents: write  # Allow pushing results back to repository
 
 jobs:
-  update-yield-curves:
+  update-ettj-curves:
     runs-on: ubuntu-latest
     
     permissions:
@@ -34,18 +34,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyyaml
       
-      - name: Run yield curve pipeline
+      - name: Run ETTJ pipeline
         run: python src/pipeline.py
       
       - name: Commit and push results
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add -A
           git add output/*.csv
-          git diff --staged --quiet || git commit -m "Update yield curves - $(date +'%Y-%m-%d')"
+          git diff --staged --quiet || git commit -m "Update ANBIMA ETTJ curves - $(date +'%Y-%m-%d')"
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
