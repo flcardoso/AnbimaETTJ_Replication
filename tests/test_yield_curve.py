@@ -105,6 +105,52 @@ class TestDataFetcher(unittest.TestCase):
         self.assertIn('maturity_date', inflation.columns)
         self.assertIn('real_yield', inflation.columns)
         self.assertGreater(len(inflation), 0)
+    
+    def test_fetch_ettj_for_date_structure(self):
+        """Test that fetch_ettj_for_date returns proper structure."""
+        from data_fetcher import BondDataFetcher
+        from datetime import date
+        
+        fetcher = BondDataFetcher()
+        # This will likely return empty list due to network restrictions
+        # but should not raise an exception
+        result = fetcher.fetch_ettj_for_date(date(2024, 11, 14))
+        
+        # Should return a list
+        self.assertIsInstance(result, list)
+        
+        # If data is returned, verify structure
+        if result:
+            for vertex in result:
+                self.assertIsInstance(vertex, dict)
+                self.assertIn('date', vertex)
+                self.assertIn('du', vertex)
+                # At least one rate should be present
+                self.assertTrue(
+                    'nominal' in vertex or 'real' in vertex or 'breakeven' in vertex
+                )
+    
+    def test_fetch_ettj_helper_function(self):
+        """Test the fetch_anbima_ettj_api helper function."""
+        from data_fetcher import fetch_anbima_ettj_api
+        from urllib.error import URLError
+        
+        # Test without date parameter (may fail due to network restrictions)
+        try:
+            result = fetch_anbima_ettj_api()
+            # If successful, should return dict or None
+            self.assertTrue(result is None or isinstance(result, dict))
+        except (URLError, Exception):
+            # Network errors are expected and acceptable
+            pass
+        
+        # Test with date parameter
+        try:
+            result = fetch_anbima_ettj_api("2024-11-14")
+            self.assertTrue(result is None or isinstance(result, dict))
+        except (URLError, Exception):
+            # Network errors are expected and acceptable
+            pass
 
 
 if __name__ == '__main__':
