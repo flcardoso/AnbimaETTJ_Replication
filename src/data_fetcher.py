@@ -6,20 +6,21 @@ Retrieves nominal (pre-fixado), IPCA-linked (real), and implicit (breakeven) cur
 """
 
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import List, Dict, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
 import json
 import logging
 import os
+import base64
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ANBIMA ETTJ API endpoint
 ANBIMA_AUTH_URL = "https://api.anbima.com.br/oauth/access-token"
-ANBIMA_ETTJ_URL = "https://api.anbima.com.br/feed/precos-indices/v1/titulos-publicos/curvas-juros"
+ANBIMA_ETTJ_URL = "https://api-sandbox.anbima.com.br/feed/precos-indices/v1/titulos-publicos/curvas-juros"
 
 # Global token cache
 _access_token = None
@@ -49,6 +50,7 @@ def get_access_token() -> Optional[str]:
     client_id = os.environ.get('ANBIMA_CLIENT_ID')
     client_secret = os.environ.get('ANBIMA_CLIENT_SECRET')  # Note: SECRET, not API_KEY
     
+
     if not client_id or not client_secret:
         logger.error("ANBIMA_CLIENT_ID and ANBIMA_CLIENT_SECRET must be set in environment")
         return None
@@ -62,17 +64,20 @@ def get_access_token() -> Optional[str]:
         # Encode as JSON
         json_data = json.dumps(data).encode('utf-8')
         
+        # Create Basic auth header
+        auth_string = f'{client_id}:{client_secret}'
+        b64_auth = base64.b64encode(auth_string.encode()).decode()
+        
         # Create request
         request = Request(ANBIMA_AUTH_URL, data=json_data, method='POST')
         request.add_header('Content-Type', 'application/json')
-        request.add_header('client_id', client_id)
-        request.add_header('access_key', client_secret)
+        request.add_header('Authorization', f'Basic {b64_auth}')
         
         logger.info("Requesting new access token from ANBIMA")
         
         # Make request
         with urlopen(request, timeout=30) as response:
-            if response.status == 200:
+            if response.status in (200, 201):
                 token_data = json.loads(response.read().decode('utf-8'))
                 _access_token = token_data.get('access_token')
                 
@@ -134,10 +139,12 @@ def fetch_anbima_ettj_api(ref_date: Optional[str] = None) -> Optional[dict]:
         request = Request(url)
         request.add_header('User-Agent', 'Python-urllib/AnbimaETTJ-Replication')
         request.add_header('Authorization', f'Bearer {access_token}')
+        request.add_header('client_id', os.environ.get('ANBIMA_CLIENT_ID'))
+        request.add_header('access_token', access_token)
         
         # Perform HTTP GET request
         with urlopen(request, timeout=30) as response:
-            if response.status == 200:
+            if response.status in (200, 201):
                 data = response.read()
                 # Parse JSON response
                 json_data = json.loads(data.decode('utf-8'))
@@ -222,13 +229,18 @@ class AnbimaETTJFetcher:
             if isinstance(api_response, dict):
                 # Try different possible keys
                 curves_data = (
+                    api_response.get('ettj') or
                     api_response.get('curvas') or 
                     api_response.get('curvas_juros') or
                     api_response.get('data') or
                     []
                 )
             elif isinstance(api_response, list):
-                curves_data = api_response
+                # API returns list with single dict containing 'ettj' key
+                if len(api_response) > 0 and isinstance(api_response[0], dict):
+                    curves_data = api_response[0].get('ettj', api_response)
+                else:
+                    curves_data = api_response
             
             if not curves_data:
                 self.logger.warning(f"No curve data found in API response for {date_str}")
