@@ -224,6 +224,43 @@ class TestAnbimaETTJFetcher(unittest.TestCase):
         # Check that the date is from the API response, not the requested date
         self.assertEqual(result[0]['date'], date(2024, 11, 15))
     
+    @patch('data_fetcher.fetch_anbima_ettj_api')
+    def test_week_data_deduplicates_when_api_returns_same_date(self, mock_api):
+        """Test that fetch_week_data deduplicates when API returns same data for multiple requests."""
+        # Mock API to return same data with same date for all requests
+        # This simulates the scenario where the API returns the most recent data
+        # regardless of the requested date
+        mock_api.return_value = {
+            'data_referencia': '2024-11-11',  # Monday
+            'curvas': [
+                {
+                    'vertice_du': 21,
+                    'taxa_prefixadas': 11.5,
+                    'taxa_ipca': 6.2,
+                    'taxa_implicita': 5.0
+                }
+            ]
+        }
+        
+        # Fetch data for a week (will make 5 API calls)
+        result = self.fetcher.fetch_week_data(
+            date(2024, 11, 11),  # Monday
+            date(2024, 11, 15)   # Friday
+        )
+        
+        # Should have 5 vertices (one for each weekday call)
+        # Before the fix, these would have different dates but same data
+        # After the fix, they should all have the same date
+        self.assertEqual(len(result), 5)
+        
+        # All vertices should have the same date from the API response
+        for vertex in result:
+            self.assertEqual(vertex['date'], date(2024, 11, 11))
+        
+        # All vertices should have the same DU
+        for vertex in result:
+            self.assertEqual(vertex['du'], 21)
+    
     @patch('data_fetcher.urlopen')
     @patch('data_fetcher.Request')
     def test_authentication_headers_added(self, mock_request_class, mock_urlopen):
