@@ -94,6 +94,14 @@ class ETTJPipeline:
         
         # Save to CSV
         self._save_to_csv(df)
+        # Fetch and save NSS parameters
+        params = self.fetcher.fetch_parameters_week(start_date, end_date)
+        if params:
+            param_df = pd.DataFrame(params)
+            self._save_parameters_to_csv(param_df)
+        else:
+            self.logger.info('No NSS parameters fetched for range.')
+
         
         self.logger.info("Pipeline completed successfully")
     
@@ -149,6 +157,26 @@ class ETTJPipeline:
                 self.logger.info(f"Created {filename} with {len(output_df)} records")
 
 
+
+    def _save_parameters_to_csv(self, params_df: pd.DataFrame):
+        """Append NSS parameter sets to ettj_parameters.csv with dedup (date, grupo_indexador)."""
+        if params_df.empty:
+            self.logger.info('No parameters to save')
+            return
+        filepath=os.path.join(self.output_dir,'ettj_parameters.csv')
+        params_df=params_df.copy()
+        params_df['date']=params_df['date'].astype(str)
+        if os.path.exists(filepath):
+            existing=pd.read_csv(filepath)
+            combined=pd.concat([existing, params_df], ignore_index=True)
+            combined=combined.drop_duplicates(subset=['date','grupo_indexador'], keep='last')
+            combined=combined.sort_values(['date','grupo_indexador']).reset_index(drop=True)
+            combined.to_csv(filepath, index=False)
+            self.logger.info(f"Updated ettj_parameters.csv with {len(params_df)} new records")
+        else:
+            params_df=params_df.sort_values(['date','grupo_indexador']).reset_index(drop=True)
+            params_df.to_csv(filepath, index=False)
+            self.logger.info(f"Created ettj_parameters.csv with {len(params_df)} records")
 def main():
     """Main entry point."""
     logger.info("Starting ANBIMA ETTJ pipeline")

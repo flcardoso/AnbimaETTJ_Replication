@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # ANBIMA ETTJ API endpoint
 ANBIMA_AUTH_URL = "https://api.anbima.com.br/oauth/access-token"
-ANBIMA_ETTJ_URL = "https://api-sandbox.anbima.com.br/feed/precos-indices/v1/titulos-publicos/curvas-juros"
+ANBIMA_ETTJ_URL = "https://api.anbima.com.br/feed/precos-indices/v1/titulos-publicos/curvas-juros"
 
 # Global token cache
 _access_token = None
@@ -319,3 +319,61 @@ class AnbimaETTJFetcher:
             current_date += timedelta(days=1)
         
         return all_data
+
+    def fetch_parameters_for_date(self, ref_date: date) -> List[Dict]:
+        """Fetch NSS curve parameters (Nelson-Siegel-Svensson) for a specific date."""
+        date_str = ref_date.strftime('%Y-%m-%d')
+        try:
+            api_response = fetch_anbima_ettj_api(date_str)
+            if not api_response:
+                self.logger.warning(f"No parameter data returned from API for {date_str}")
+                return []
+            parametros_list = []
+            if isinstance(api_response, list) and api_response:
+                first = api_response[0]
+                if isinstance(first, dict):
+                    parametros_list = first.get('parametros', []) or []
+            elif isinstance(api_response, dict):
+                parametros_list = api_response.get('parametros', []) or []
+            if not parametros_list:
+                self.logger.warning(f"No NSS parameters found in API response for {date_str}")
+                return []
+            result=[]
+            for p in parametros_list:
+                try:
+                    entry={
+                        'date': ref_date,
+                        'grupo_indexador': p.get('grupo_indexador'),
+                        'b1': p.get('b1'),
+                        'b2': p.get('b2'),
+                        'b3': p.get('b3'),
+                        'b4': p.get('b4'),
+                        'l1': p.get('l1'),
+                        'l2': p.get('l2')
+                    }
+                    if entry['grupo_indexador'] and entry['b1'] is not None:
+                        result.append(entry)
+                except Exception as e:
+                    self.logger.warning(f"Error parsing parameter block: {e}")
+            if result:
+                self.logger.info(f"Parsed {len(result)} NSS parameter sets for {date_str}")
+            return result
+        except (URLError, HTTPError) as e:
+            self.logger.error(f"Network error fetching parameters for {date_str}: {e}")
+            return []
+        except Exception as e:
+            self.logger.error(f"Unexpected error fetching parameters for {date_str}: {e}")
+            return []
+
+    def fetch_parameters_week(self, start_date: date, end_date: date) -> List[Dict]:
+        """Fetch NSS parameters for each business day in the given date range."""
+        all_params=[]
+        current_date=start_date
+        while current_date <= end_date:
+            if current_date.weekday() < 5:
+                daily=self.fetch_parameters_for_date(current_date)
+                if daily:
+                    all_params.extend(daily)
+            current_date += timedelta(days=1)
+        return all_params
+
