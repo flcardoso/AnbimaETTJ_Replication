@@ -144,6 +144,123 @@ class TestAnbimaETTJFetcher(unittest.TestCase):
         self.assertIsNone(result[0]['real'])
         self.assertIsNone(result[0]['breakeven'])
     
+    @patch('data_fetcher.fetch_anbima_ettj_api')
+    def test_fetch_extracts_date_from_response(self, mock_api):
+        """Test that fetcher extracts the actual date from API response."""
+        # Mock API response with data_referencia field
+        mock_api.return_value = {
+            'data_referencia': '2024-11-15',  # Actual data date
+            'curvas': [
+                {
+                    'vertice_du': 21,
+                    'taxa_prefixadas': 11.5,
+                    'taxa_ipca': 6.2,
+                    'taxa_implicita': 5.0
+                }
+            ]
+        }
+        
+        # Request data for a different date
+        result = self.fetcher.fetch_ettj_for_date(date(2024, 11, 14))
+        
+        # Should have 1 vertex
+        self.assertEqual(len(result), 1)
+        
+        # Check that the date is from the API response, not the requested date
+        self.assertEqual(result[0]['date'], date(2024, 11, 15))
+    
+    @patch('data_fetcher.fetch_anbima_ettj_api')
+    def test_fetch_extracts_date_from_list_response(self, mock_api):
+        """Test that fetcher extracts date from list-type API response."""
+        # Mock API response as list with data_referencia in first item
+        mock_api.return_value = [
+            {
+                'data_referencia': '2024-11-16',
+                'ettj': [
+                    {
+                        'vertice_du': 42,
+                        'taxa_prefixadas': 11.8,
+                        'taxa_ipca': 6.4,
+                        'taxa_implicita': 5.1
+                    }
+                ]
+            }
+        ]
+        
+        # Request data for a different date
+        result = self.fetcher.fetch_ettj_for_date(date(2024, 11, 14))
+        
+        # Should have 1 vertex
+        self.assertEqual(len(result), 1)
+        
+        # Check that the date is from the API response
+        self.assertEqual(result[0]['date'], date(2024, 11, 16))
+    
+    @patch('data_fetcher.fetch_anbima_ettj_api')
+    def test_parameters_extracts_date_from_response(self, mock_api):
+        """Test that parameter fetcher extracts the actual date from API response."""
+        # Mock API response with data_referencia and parametros
+        mock_api.return_value = {
+            'data_referencia': '2024-11-15',
+            'parametros': [
+                {
+                    'grupo_indexador': 'PREFIXADOS',
+                    'b1': 0.115,
+                    'b2': -0.01,
+                    'b3': -0.062,
+                    'b4': 0.032,
+                    'l1': 0.95,
+                    'l2': 0.47
+                }
+            ]
+        }
+        
+        # Request parameters for a different date
+        result = self.fetcher.fetch_parameters_for_date(date(2024, 11, 14))
+        
+        # Should have 1 parameter set
+        self.assertEqual(len(result), 1)
+        
+        # Check that the date is from the API response, not the requested date
+        self.assertEqual(result[0]['date'], date(2024, 11, 15))
+    
+    @patch('data_fetcher.fetch_anbima_ettj_api')
+    def test_week_data_deduplicates_when_api_returns_same_date(self, mock_api):
+        """Test that fetch_week_data deduplicates when API returns same data for multiple requests."""
+        # Mock API to return same data with same date for all requests
+        # This simulates the scenario where the API returns the most recent data
+        # regardless of the requested date
+        mock_api.return_value = {
+            'data_referencia': '2024-11-11',  # Monday
+            'curvas': [
+                {
+                    'vertice_du': 21,
+                    'taxa_prefixadas': 11.5,
+                    'taxa_ipca': 6.2,
+                    'taxa_implicita': 5.0
+                }
+            ]
+        }
+        
+        # Fetch data for a week (will make 5 API calls)
+        result = self.fetcher.fetch_week_data(
+            date(2024, 11, 11),  # Monday
+            date(2024, 11, 15)   # Friday
+        )
+        
+        # Should have 5 vertices (one for each weekday call)
+        # Before the fix, these would have different dates but same data
+        # After the fix, they should all have the same date
+        self.assertEqual(len(result), 5)
+        
+        # All vertices should have the same date from the API response
+        for vertex in result:
+            self.assertEqual(vertex['date'], date(2024, 11, 11))
+        
+        # All vertices should have the same DU
+        for vertex in result:
+            self.assertEqual(vertex['du'], 21)
+    
     @patch('data_fetcher.urlopen')
     @patch('data_fetcher.Request')
     def test_authentication_headers_added(self, mock_request_class, mock_urlopen):

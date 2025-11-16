@@ -225,9 +225,25 @@ class AnbimaETTJFetcher:
             # { "data_referencia": "YYYY-MM-DD", "curvas": [...] }
             # or { "curvas_juros": [...] }
             
+            # Extract the actual reference date from API response
+            actual_date = ref_date  # Default to requested date
             curves_data = None
+            
             if isinstance(api_response, dict):
-                # Try different possible keys
+                # Try to extract actual date from response
+                date_from_response = api_response.get('data_referencia') or api_response.get('dataReferencia')
+                if date_from_response:
+                    try:
+                        # Parse the date string to a date object
+                        actual_date = datetime.strptime(date_from_response, '%Y-%m-%d').date()
+                        if actual_date != ref_date:
+                            self.logger.warning(
+                                f"API returned data for {actual_date} instead of requested {ref_date}"
+                            )
+                    except (ValueError, TypeError) as e:
+                        self.logger.warning(f"Could not parse date from API response: {e}")
+                
+                # Try different possible keys for curves data
                 curves_data = (
                     api_response.get('ettj') or
                     api_response.get('curvas') or 
@@ -238,7 +254,20 @@ class AnbimaETTJFetcher:
             elif isinstance(api_response, list):
                 # API returns list with single dict containing 'ettj' key
                 if len(api_response) > 0 and isinstance(api_response[0], dict):
-                    curves_data = api_response[0].get('ettj', api_response)
+                    # Try to extract date from first item
+                    first_item = api_response[0]
+                    date_from_response = first_item.get('data_referencia') or first_item.get('dataReferencia')
+                    if date_from_response:
+                        try:
+                            actual_date = datetime.strptime(date_from_response, '%Y-%m-%d').date()
+                            if actual_date != ref_date:
+                                self.logger.warning(
+                                    f"API returned data for {actual_date} instead of requested {ref_date}"
+                                )
+                        except (ValueError, TypeError) as e:
+                            self.logger.warning(f"Could not parse date from API response: {e}")
+                    
+                    curves_data = first_item.get('ettj', api_response)
                 else:
                     curves_data = api_response
             
@@ -252,7 +281,7 @@ class AnbimaETTJFetcher:
                     # Extract vertex data
                     # Typical fields: vertice_du, taxa_prefixadas, taxa_ipca, taxa_implicita
                     vertex_entry = {
-                        'date': ref_date,
+                        'date': actual_date,  # Use actual date from API response
                         'du': item.get('vertice_du') or item.get('du') or item.get('prazo_du'),
                         'nominal': item.get('taxa_prefixadas') or item.get('taxa_nominal') or item.get('taxa_pre'),
                         'real': item.get('taxa_ipca') or item.get('taxa_real'),
@@ -328,21 +357,51 @@ class AnbimaETTJFetcher:
             if not api_response:
                 self.logger.warning(f"No parameter data returned from API for {date_str}")
                 return []
+            
+            # Extract the actual reference date from API response
+            actual_date = ref_date  # Default to requested date
             parametros_list = []
+            
             if isinstance(api_response, list) and api_response:
                 first = api_response[0]
                 if isinstance(first, dict):
+                    # Try to extract date from response
+                    date_from_response = first.get('data_referencia') or first.get('dataReferencia')
+                    if date_from_response:
+                        try:
+                            actual_date = datetime.strptime(date_from_response, '%Y-%m-%d').date()
+                            if actual_date != ref_date:
+                                self.logger.warning(
+                                    f"API returned parameters for {actual_date} instead of requested {ref_date}"
+                                )
+                        except (ValueError, TypeError) as e:
+                            self.logger.warning(f"Could not parse date from API response: {e}")
+                    
                     parametros_list = first.get('parametros', []) or []
             elif isinstance(api_response, dict):
+                # Try to extract date from response
+                date_from_response = api_response.get('data_referencia') or api_response.get('dataReferencia')
+                if date_from_response:
+                    try:
+                        actual_date = datetime.strptime(date_from_response, '%Y-%m-%d').date()
+                        if actual_date != ref_date:
+                            self.logger.warning(
+                                f"API returned parameters for {actual_date} instead of requested {ref_date}"
+                            )
+                    except (ValueError, TypeError) as e:
+                        self.logger.warning(f"Could not parse date from API response: {e}")
+                
                 parametros_list = api_response.get('parametros', []) or []
+            
             if not parametros_list:
                 self.logger.warning(f"No NSS parameters found in API response for {date_str}")
                 return []
+            
             result=[]
             for p in parametros_list:
                 try:
                     entry={
-                        'date': ref_date,
+                        'date': actual_date,  # Use actual date from API response
                         'grupo_indexador': p.get('grupo_indexador'),
                         'b1': p.get('b1'),
                         'b2': p.get('b2'),
