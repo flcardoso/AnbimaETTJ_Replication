@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # ANBIMA ETTJ API endpoint
 ANBIMA_AUTH_URL = "https://api.anbima.com.br/oauth/access-token"
-ANBIMA_ETTJ_URL = "https://api.anbima.com.br/feed/precos-indices/v1/titulos-publicos/curvas-juros"
+ANBIMA_ETTJ_URL = "https://api-sandbox.anbima.com.br/feed/precos-indices/v1/titulos-publicos/curvas-juros"
 
 # Global token cache
 _access_token = None
