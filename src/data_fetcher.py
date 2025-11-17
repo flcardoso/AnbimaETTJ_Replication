@@ -43,7 +43,7 @@ def get_access_token() -> Optional[str]:
     # Check if we have a valid cached token
     if _access_token and _token_expiry:
         if datetime.now() < _token_expiry:
-            logger.debug("Using cached access token")
+            logger.info("Using cached access token (expiry %s)", _token_expiry)
             return _access_token
     
     # Get credentials from environment
