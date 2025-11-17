@@ -108,15 +108,11 @@ def test_week_data():
     print("Testing week data fetch (previous week)")
     print(f"{'='*60}\n")
     
-    # Calculate previous week dates
     today = date.today()
     days_since_monday = today.weekday()
-    if days_since_monday == 0:
-        last_monday = today - timedelta(days=7)
-    else:
-        last_monday = today - timedelta(days=days_since_monday)
-    
-    previous_week_start = last_monday - timedelta(days=7)
+    current_week_monday = today - timedelta(days=days_since_monday)
+
+    previous_week_start = current_week_monday - timedelta(days=7)
     previous_week_end = previous_week_start + timedelta(days=4)
     
     print(f"Date range: {previous_week_start} to {previous_week_end}")

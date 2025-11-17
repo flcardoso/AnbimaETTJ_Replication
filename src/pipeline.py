@@ -43,28 +43,23 @@ class ETTJPipeline:
         os.makedirs(self.output_dir, exist_ok=True)
         
     def get_previous_week_dates(self) -> tuple[date, date]:
-        """
-        Calculate the date range for the previous week (Monday-Friday).
-        
-        Returns:
-            Tuple of (start_date, end_date) for the previous week
-        """
-        today = date.today()
-        
-        # Find the most recent Monday
-        days_since_monday = today.weekday()  # Monday = 0, Sunday = 6
-        if days_since_monday == 0:
-            # If today is Monday, go back to last Monday
-            last_monday = today - timedelta(days=7)
-        else:
-            # Go back to the most recent Monday
-            last_monday = today - timedelta(days=days_since_monday)
-        
-        # Previous week is the week before last Monday
-        previous_week_start = last_monday - timedelta(days=7)
-        previous_week_end = previous_week_start + timedelta(days=4)  # Friday
-        
-        return previous_week_start, previous_week_end
+    """
+    Calculate the date range for the previous week (Monday-Friday).
+
+    Returns:
+        Tuple of (start_date, end_date) for the previous week
+    """
+    today = date.today()
+
+    # Find the Monday of the current week
+    days_since_monday = today.weekday()  # Monday = 0, Sunday = 6
+    current_week_monday = today - timedelta(days=days_since_monday)
+
+    # Previous week is the week before the current week's Monday
+    previous_week_start = current_week_monday - timedelta(days=7)
+    previous_week_end = previous_week_start + timedelta(days=4)  # Friday
+
+    return previous_week_start, previous_week_end
     
     def run(self, start_date: date = None, end_date: date = None):
         """
